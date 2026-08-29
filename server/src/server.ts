@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import prisma from "./config/prisma.js";
+import authRoutes from "./routes/auth.routes.js";
 
 const app = express();
 
@@ -12,6 +13,8 @@ app.get("/", (req, res) => {
     message: "AI Personal OS API is running",
   });
 });
+
+app.use("/api/auth", authRoutes);
 
 app.get("/health", async (req, res) => {
   try {
