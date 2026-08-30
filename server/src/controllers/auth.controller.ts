@@ -2,7 +2,9 @@ import type { Request, Response } from "express";
 import argon2 from "argon2";
 import prisma from "../config/prisma.js";
 import { createVerificationChallenge } from "../services/verification.service.js";
-import { sendVerificationEmail } from "../services/email.service.js";
+import { sendVerificationEmail,  sendPasswordResetEmail} from "../services/email.service.js";
+import { createPasswordResetChallenge } from "../services/password-reset.service.js";
+
 import jwt from "jsonwebtoken";
 
 export async function register(req: Request, res: Response) {
@@ -274,6 +276,129 @@ export async function login(req: Request, res: Response) {
     });
   } catch (error) {
     console.error("Login error:", error);
+
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+}
+
+export async function forgotPassword(req: Request, res: Response) {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        message: "Email is required",
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await prisma.user.findUnique({
+      where: {
+        email: normalizedEmail,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    const otp = await createPasswordResetChallenge(user.id);
+
+    await sendPasswordResetEmail(user.email, otp);
+
+    return res.status(200).json({
+      message: "Password reset email sent successfully",
+    });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+}
+
+
+export async function resetPassword(req: Request, res: Response) {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({
+        message: "Email, OTP, and new password are required",
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await prisma.user.findUnique({
+      where: {
+        email: normalizedEmail,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    const resetChallenge = await prisma.passwordReset.findFirst({
+      where: {
+        userId: user.id,
+      },
+    });
+
+    if (!resetChallenge) {
+      return res.status(400).json({
+        message: "No active password reset challenge found",
+      });
+    }
+
+    if (resetChallenge.expiresAt < new Date()) {
+      return res.status(400).json({
+        message: "Password reset code has expired",
+      });
+    }
+
+    const isValidOtp = await argon2.verify(
+      resetChallenge.otpHash,
+      otp
+    );
+
+    if (!isValidOtp) {
+      return res.status(400).json({
+        message: "Invalid password reset code",
+      });
+    }
+
+    const passwordHash = await argon2.hash(newPassword);
+
+    await prisma.user.update({
+      where: {
+        id: user.id,
+      },
+      data: {
+        passwordHash,
+      },
+    });
+
+    await prisma.passwordReset.deleteMany({
+      where: {
+        userId: user.id,
+      },
+    });
+
+    return res.status(200).json({
+      message: "Password reset successfully",
+    });
+  } catch (error) {
+    console.error("Reset password error:", error);
 
     return res.status(500).json({
       message: "Internal server error",
