@@ -17,6 +17,7 @@ model User {
   updatedAt     DateTime @updatedAt
 
   emailVerifications EmailVerification[]
+  passwordResets PasswordReset[]
 }
 
 model EmailVerification {
@@ -25,6 +26,19 @@ model EmailVerification {
   otpHash   String
   expiresAt DateTime
   attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  userId    String
+  otpHash   String
+  expiresAt DateTime
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
