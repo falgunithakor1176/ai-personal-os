@@ -3,6 +3,7 @@ import argon2 from "argon2";
 import prisma from "../config/prisma.js";
 import { createVerificationChallenge } from "../services/verification.service.js";
 import { sendVerificationEmail } from "../services/email.service.js";
+import jwt from "jsonwebtoken";
 
 export async function register(req: Request, res: Response) {
     try {
@@ -206,4 +207,76 @@ export async function verifyEmail(req: Request, res: Response) {
   }
 }
 
+export async function login(req: Request, res: Response) {
+  try {
+    const { email, password } = req.body;
 
+    if (!email || !password) {
+      return res.status(400).json({
+        message: "Email and password are required",
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await prisma.user.findUnique({
+      where: {
+        email: normalizedEmail,
+      },
+    });
+
+    if (!user) {
+      return res.status(401).json({
+        message: "Invalid email or password",
+      });
+    }
+
+    if (!user.emailVerified) {
+      return res.status(403).json({
+        message: "Please verify your email before logging in",
+      });
+    }
+
+    const isPasswordValid = await argon2.verify(
+      user.passwordHash,
+      password
+    );
+
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        message: "Invalid email or password",
+      });
+    }
+
+    if (!process.env.JWT_SECRET) {
+      throw new Error("JWT_SECRET is not configured");
+    }
+
+    const token = jwt.sign(
+      {
+        userId: user.id,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "7d",
+      }
+    );
+
+    return res.status(200).json({
+      message: "Login successful",
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        emailVerified: user.emailVerified,
+      },
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+}
