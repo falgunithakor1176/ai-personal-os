@@ -5,6 +5,7 @@ import authRoutes from "./routes/auth.routes.js";
 import userRoutes from "./routes/user.routes.js";
 import noteRoutes from "./routes/note.routes.js";
 import taskRoutes from "./routes/task.routes.js";
+import documentRoutes from "./routes/document.routes.js";
 
 const app = express();
 
@@ -21,6 +22,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/notes", noteRoutes);
 app.use("/api/tasks", taskRoutes);
+app.use("/api/documents", documentRoutes);
 app.get("/health", async (req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
