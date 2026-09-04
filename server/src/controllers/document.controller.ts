@@ -1,5 +1,9 @@
 import { Request, Response } from "express";
 import prisma from "../config/prisma.js";
+import { extractTextFromDocument } from "../services/document-extraction.service.js";
+import { chunkText } from "../services/chunking.service.js";
+import { generateEmbedding } from "../services/embedding.service.js";
+
 
 export const getDocuments = async (req: Request, res: Response) => {
   try {
@@ -89,6 +93,8 @@ export const deleteDocument = async (req: Request, res: Response) => {
 };
 
 export const uploadDocument = async (req: Request, res: Response) => {
+  console.log("UPLOAD CONTROLLER HIT");
+
   try {
     if (!req.file) {
       return res.status(400).json({
@@ -107,9 +113,59 @@ export const uploadDocument = async (req: Request, res: Response) => {
       },
     });
 
+    console.log("Starting text extraction...");
+
+    const extractedText = await extractTextFromDocument(
+      document.storagePath,
+      document.mimeType
+    );
+
+    console.log("Extraction completed");
+    console.log("Extracted text length:", extractedText.length);
+
+    const chunks = chunkText(extractedText);
+
+    console.log("Number of chunks:", chunks.length);
+
+    // Create chunks first
+    await prisma.documentChunk.createMany({
+      data: chunks.map((chunk) => ({
+        documentId: document.id,
+        chunkIndex: chunk.chunkIndex,
+        content: chunk.content,
+      })),
+    });
+
+    console.log("Document chunks created");
+
+    // Generate and store embeddings
+    console.log("Generating embeddings...");
+
+    for (const chunk of chunks) {
+      const embedding = await generateEmbedding(chunk.content);
+
+      await prisma.$executeRaw`
+        UPDATE "DocumentChunk"
+        SET embedding = ${JSON.stringify(embedding)}::vector
+        WHERE "documentId" = ${document.id}
+        AND "chunkIndex" = ${chunk.chunkIndex}
+      `;
+    }
+
+    console.log("Embeddings generated and stored");
+
+    const updatedDocument = await prisma.document.update({
+      where: {
+        id: document.id,
+      },
+      data: {
+        extractedText,
+      },
+    });
+
     return res.status(201).json({
       message: "Document uploaded successfully",
-      document,
+      document: updatedDocument,
     });
   } catch (error) {
     console.error("Upload document error:", error);
